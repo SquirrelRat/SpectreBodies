@@ -15,7 +15,6 @@ namespace SpectreBodies
 {
     public class SpectreBodies : BaseSettingsPlugin<SpectreBodiesSettings>
     {
-        private const int MaxRecentCorpses = 5;
         private readonly Dictionary<long, Monster> _nearbyMonsters = new Dictionary<long, Monster>();
         private readonly List<string> _recentlySeenCorpses = new List<string>();
         
@@ -154,6 +153,9 @@ namespace SpectreBodies
                 if (entity == null || !entity.IsValid || string.IsNullOrEmpty(entity.Metadata))
                     continue;
 
+                if (!entity.Metadata.Contains("/Monsters/", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
                 if (!entity.IsDead || !entity.IsHostile || !entity.IsTargetable)
                     continue;
                 
@@ -161,7 +163,7 @@ namespace SpectreBodies
                 if (!_cachedValidSpectreBodies.Contains(metadata) && !_recentlySeenCorpses.Contains(metadata))
                 {
                     _recentlySeenCorpses.Add(metadata);
-                    if (_recentlySeenCorpses.Count > MaxRecentCorpses)
+                    if (_recentlySeenCorpses.Count > Settings.MaxRecentCorpses.Value)
                     {
                         _recentlySeenCorpses.RemoveAt(0);
                     }

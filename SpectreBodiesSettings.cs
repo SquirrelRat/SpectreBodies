@@ -12,11 +12,13 @@ namespace SpectreBodies
             Enable = new ToggleNode(true);
             ShowAllCorpses = new ToggleNode(false);
             UseRenderNames = new ToggleNode(true);
-
+            
             SpectreListSource =
                 "Metadata/Monsters/KaomWarrior/KaomWarrior7,\n" +
                 "Metadata/Monsters/WickerMan/WickerMan,\n" +
                 "Metadata/Monsters/Miner/MinerLantern";
+
+            MaxRecentCorpses = new RangeNode<int>(10, 5, 15);
 
             HighlightCorpse = new ToggleNode(true);
             HighlightColor = new ColorNode(new Color(255, 255, 0, 150));
@@ -40,6 +42,9 @@ namespace SpectreBodies
 
         public string SpectreListSource { get; set; }
 
+        [Menu("Recent List Size", "Number of corpses to remember in the 'Recently Seen' list.")]
+        public RangeNode<int> MaxRecentCorpses { get; set; }
+        
         [Menu("Highlight Corpse")]
         public ToggleNode HighlightCorpse { get; set; }
 
