@@ -15,8 +15,9 @@ namespace SpectreBodies
 {
     public class SpectreBodies : BaseSettingsPlugin<SpectreBodiesSettings>
     {
-        private readonly Dictionary<long, Monster> _nearbyMonsters = new Dictionary<long, Monster>();
-        private readonly List<string> _recentlySeenCorpses = new List<string>();
+        private readonly Queue<string> _recentCorpseQueue = new Queue<string>();
+        private readonly HashSet<string> _recentCorpseSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string> _displayNameCache = new Dictionary<string, string>();
         
         private string _newSpectreBuffer = "";
         private string _cachedSpectreListSource = "";
@@ -74,9 +75,8 @@ namespace SpectreBodies
             ImGui.TextColored(titleColor, "Recently Seen Corpses");
             
             string spectreToAdd = null;
-            for (var i = _recentlySeenCorpses.Count - 1; i >= 0; i--)
+            foreach (var recentSpectre in _recentCorpseQueue.Reverse())
             {
-                var recentSpectre = _recentlySeenCorpses[i];
                 ImGui.Text(recentSpectre);
                 ImGui.SameLine();
                 if (ImGui.Button($"+##{recentSpectre}")) spectreToAdd = recentSpectre;
@@ -89,7 +89,6 @@ namespace SpectreBodies
                     currentList.Add(spectreToAdd);
                     listChanged = true;
                 }
-                _recentlySeenCorpses.Remove(spectreToAdd);
             }
             
             if (listChanged)
@@ -98,38 +97,23 @@ namespace SpectreBodies
             }
         }
         
-        public override void EntityAdded(Entity entity)
+        public override void OnUnload()
         {
-            if (entity.Type == EntityType.Monster)
-            {
-                var monster = entity.AsObject<Monster>();
-                if (monster != null && monster.Address != 0x0 && !_nearbyMonsters.ContainsKey(monster.Address))
-                    _nearbyMonsters.Add(monster.Address, monster);
-            }
-        }
-
-        public override void EntityRemoved(Entity entity)
-        {
-            if (entity.Type == EntityType.Monster)
-            {
-                var monster = entity.AsObject<Monster>();
-                if (monster != null)
-                    _nearbyMonsters.Remove(monster.Address);
-            }
+            _recentCorpseQueue.Clear();
+            _recentCorpseSet.Clear();
+            _displayNameCache.Clear();
         }
 
         public override void AreaChange(AreaInstance area)
         {
-            base.AreaChange(area);
-            _nearbyMonsters.Clear();
-            _recentlySeenCorpses.Clear();
+            _recentCorpseQueue.Clear();
+            _recentCorpseSet.Clear();
+            _displayNameCache.Clear();
         }
 
         public override void Render()
         {
-            base.Render();
-
-            if (!GameController.InGame || GameController.Area.CurrentArea.IsTown || _nearbyMonsters.Count == 0)
+            if (!GameController.InGame || GameController.Area.CurrentArea.IsTown)
                 return;
 
             if (_cachedSpectreListSource != Settings.SpectreListSource)
@@ -145,45 +129,53 @@ namespace SpectreBodies
             var textZOffset = Settings.TextOffset.Value;
             var useRenderNames = Settings.UseRenderNames.Value;
             var drawDistance = Settings.DrawDistance.Value;
+            var drawDistanceSqr = drawDistance * drawDistance;
+            
+            var playerPos = GameController.Player.Pos;
+            var camera = GameController.Game.IngameState.Camera;
 
-            foreach (var monster in _nearbyMonsters.Values)
+            foreach (var entity in GameController.Entities)
             {
-                var entity = monster?.AsObject<Entity>();
-
-                if (entity == null || !entity.IsValid || string.IsNullOrEmpty(entity.Metadata))
+                if (!entity.IsDead || entity.Type != EntityType.Monster)
                     continue;
 
-                if (!entity.Metadata.Contains("/Monsters/", StringComparison.OrdinalIgnoreCase))
+                if (SDXVector3.DistanceSquared(entity.Pos, playerPos) > drawDistanceSqr)
                     continue;
 
-                if (!entity.IsDead || !entity.IsHostile || !entity.IsTargetable)
+                if (!entity.IsHostile || !entity.IsTargetable)
                     continue;
                 
                 var metadata = entity.Metadata;
-                if (!_cachedValidSpectreBodies.Contains(metadata) && !_recentlySeenCorpses.Contains(metadata))
+                if (string.IsNullOrEmpty(metadata) || !metadata.Contains("/Monsters/", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var isKnownSpectre = _cachedValidSpectreBodies.Contains(metadata);
+
+                if (!isKnownSpectre)
                 {
-                    _recentlySeenCorpses.Add(metadata);
-                    if (_recentlySeenCorpses.Count > Settings.MaxRecentCorpses.Value)
+                    if (!_recentCorpseSet.Contains(metadata))
                     {
-                        _recentlySeenCorpses.RemoveAt(0);
+                        _recentCorpseQueue.Enqueue(metadata);
+                        _recentCorpseSet.Add(metadata);
+
+                        if (_recentCorpseQueue.Count > Settings.MaxRecentCorpses.Value)
+                        {
+                            var oldestCorpse = _recentCorpseQueue.Dequeue();
+                            _recentCorpseSet.Remove(oldestCorpse);
+                        }
                     }
                 }
                 
-                if (SDXVector3.Distance(entity.Pos, GameController.Player.Pos) > drawDistance)
-                    continue;
-
-                var shouldDrawLabel = Settings.ShowAllCorpses.Value || IsSpectreBody(metadata, _cachedValidSpectreBodies);
+                var shouldDrawLabel = Settings.ShowAllCorpses.Value || isKnownSpectre;
 
                 if (shouldDrawLabel)
                 {
-                    var camera = GameController.Game.IngameState.Camera;
-                    
                     var textWorldPos = entity.Pos.Translate(0, 0, textZOffset);
                     var textScreenPos = camera.WorldToScreen(textWorldPos);
                     
                     if (textScreenPos != new SDXVector2())
                     {
-                        var displayName = GetDisplayName(entity, useRenderNames, Settings.ShowAllCorpses.Value);
+                        var displayName = GetDisplayName(entity, metadata, useRenderNames, Settings.ShowAllCorpses.Value);
                         Graphics.DrawTextWithBackground(displayName, new Vector2(textScreenPos.X, textScreenPos.Y), textColor, null, FontAlign.Center, backgroundColor);
                     }
                     
@@ -200,29 +192,27 @@ namespace SpectreBodies
             }
         }
 
-        private string GetDisplayName(Entity entity, bool useRenderNames, bool showAllMode)
+        private string GetDisplayName(Entity entity, string metadata, bool useRenderNames, bool showAllMode)
         {
             if (showAllMode)
-                return entity.Metadata;
+                return metadata;
 
-            string GetMetadataDisplayName() =>
-                entity.Metadata.Substring(entity.Metadata.LastIndexOf('/') + 1);
+            if (_displayNameCache.TryGetValue(metadata, out var cachedName))
+            {
+                return cachedName;
+            }
 
-            if (entity == null) return string.Empty;
+            var metadataName = metadata.Substring(metadata.LastIndexOf('/') + 1);
+            var renderName = entity.RenderName;
 
-            var preferredName = useRenderNames ? entity.RenderName : GetMetadataDisplayName();
-            if (!string.IsNullOrEmpty(preferredName))
-                return preferredName;
+            var preferredName = useRenderNames ? renderName : metadataName;
+            var fallbackName = useRenderNames ? metadataName : renderName;
+            
+            var finalName = !string.IsNullOrEmpty(preferredName) ? preferredName : fallbackName;
+            
+            _displayNameCache.Add(metadata, finalName);
 
-            return useRenderNames ? GetMetadataDisplayName() : entity.RenderName;
-        }
-
-        private bool IsSpectreBody(string metaData, IReadOnlySet<string> validSpectreBodies)
-        {
-            if (string.IsNullOrWhiteSpace(metaData) || validSpectreBodies.Count == 0)
-                return false;
-
-            return validSpectreBodies.Contains(metaData);
+            return finalName;
         }
     }
 }
