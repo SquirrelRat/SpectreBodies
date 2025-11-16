@@ -1,7 +1,9 @@
-﻿using ExileCore.Shared.Attributes;
+using ExileCore.Shared.Attributes;
 using ExileCore.Shared.Interfaces;
 using ExileCore.Shared.Nodes;
 using SharpDX;
+using System.Collections.Generic;
+using System.Windows.Forms;
 
 namespace SpectreBodies
 {
@@ -10,6 +12,7 @@ namespace SpectreBodies
         public SpectreBodiesSettings()
         {
             Enable = new ToggleNode(true);
+            SpectreEditorHotKey = new HotkeyNode(Keys.F6);
             ShowAllCorpses = new ToggleNode(false);
             UseRenderNames = new ToggleNode(true);
             
@@ -26,13 +29,15 @@ namespace SpectreBodies
             HighlightSegments = new RangeNode<int>(12, 3, 40);
             HighlightZOffset = new RangeNode<int>(0, -50, 50);
 
-            TextColor = new ColorBGRA(255, 255, 255, 255);
-            BackgroundColor = new ColorBGRA(0, 0, 0, 255);
+            TextColor = new ColorNode(new Color(255, 255, 255, 255));
+            BackgroundColor = new ColorNode(new Color(0, 0, 0, 255));
             TextOffset = new RangeNode<int>(20, -360, 360);
             DrawDistance = new RangeNode<int>(1050, 0, 2000);
+            UpdateIntervalMs = new RangeNode<int>(250, 100, 1000);
         }
         
         public ToggleNode Enable { get; set; }
+        public HotkeyNode SpectreEditorHotKey { get; set; }
         
         [Menu("Show All Nearby Corpses")]
         public ToggleNode ShowAllCorpses { get; set; }
@@ -71,5 +76,11 @@ namespace SpectreBodies
 
         [Menu("Draw Distance")] 
         public RangeNode<int> DrawDistance { get; set; }
+
+        [Menu("Update Interval (ms)", "The time in milliseconds between corpse scans.")]
+        public RangeNode<int> UpdateIntervalMs { get; set; }
+
+        [Menu("Spectre Colors", "Custom colors for individual spectre corpses.")]
+        public Dictionary<string, ColorNode> SpectreColors { get; set; } = new Dictionary<string, ColorNode>();
     }
 }
