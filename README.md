@@ -2,6 +2,15 @@
 
 A Path of Exile plugin for managing and highlighting spectre corpses with customizable colors and real-time detection.
 
+## Screenshots
+
+### Spectre Editor Interface
+<img width="819" height="544" alt="image" src="https://github.com/user-attachments/assets/65d4d3c4-7251-4671-aa76-1ce14877476d" />
+
+
+### In-Game Corpse Highlighting
+<img width="309" height="157" alt="image" src="https://github.com/user-attachments/assets/11055ba9-5df6-4386-9761-fc461a299e3a" />
+
 ## Features
 
 ### Core Functionality
@@ -25,7 +34,7 @@ A Path of Exile plugin for managing and highlighting spectre corpses with custom
 ## Installation
 
 1. Download the latest `SpectreBodies.dll` from the Releases page
-2. Place the file in your `ExileApi/Plugins` directory
+2. Place the file in your `ExileApi/Plugins/Source` directory
 3. Restart ExileApi (or Path of Exile if using standalone)
 4. Configure settings in the ExileApi settings panel
 
@@ -96,15 +105,6 @@ From Recent Corpses:
 - Highlight Circles: Colored circles mark corpse locations
 - Custom Colors: Your chosen colors override defaults
 - Render Names: In-game names shown in green parentheses
-
-## Screenshots
-
-### Spectre Editor Interface
-<img width="819" height="544" alt="image" src="https://github.com/user-attachments/assets/65d4d3c4-7251-4671-aa76-1ce14877476d" />
-
-
-### In-Game Corpse Highlighting
-<img width="309" height="157" alt="image" src="https://github.com/user-attachments/assets/11055ba9-5df6-4386-9761-fc461a299e3a" />
 
 ## Changelog
 
