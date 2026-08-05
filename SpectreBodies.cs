@@ -59,6 +59,10 @@ namespace SpectreBodies
         private int _frameCounter;
         private readonly object _frameCacheLock = new object();
 
+        // Metadata of the player's currently-summoned minions (alive + non-hostile),
+        // refreshed each frame-cache update. Used to mark wishlist spectres as "raised".
+        private readonly HashSet<string> _raisedMinions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         // Bundled spectre info database (friendly names, roles, acquisition hints).
         private SpectreDatabase _spectreDb = new SpectreDatabase();
 
@@ -124,6 +128,11 @@ namespace SpectreBodies
                     
                     ImGui.SameLine();
                     ImGui.Text(_spectreDb.TryLookup(spectre, out var dbEntry) ? dbEntry.Name : spectre);
+                    if (_raisedMinions.Contains(spectre))
+                    {
+                        ImGui.SameLine();
+                        ImGui.TextColored(new System.Numerics.Vector4(0.4f, 1.0f, 0.4f, 1.0f), " raised");
+                    }
                     if (_renderNameCache.TryGetValue(spectre, out var renderName))
                     {
                         ImGui.SameLine();
@@ -283,8 +292,7 @@ namespace SpectreBodies
 
             ImGui.TextColored(nameColor, e.Name);
             ImGui.SameLine();
-            ImGui.TextColored(new System.Numerics.Vector4(0.8f, 0.8f, 0.8f, 1.0f),
-                $"[{(string.IsNullOrEmpty(e.Tier) ? "?" : e.Tier)}]");
+            ImGui.TextColored(TierColor(e.Tier), $"[{(string.IsNullOrEmpty(e.Tier) ? "?" : e.Tier)}]");
             ImGui.SameLine();
             ImGui.TextDisabled($"({e.Role}{(untested ? ", Untested" : "")})");
 
@@ -297,6 +305,11 @@ namespace SpectreBodies
             {
                 AddToWishlist(e.Metadata);
                 wishlist.Add(e.Metadata);
+            }
+            if (_raisedMinions.Contains(e.Metadata))
+            {
+                ImGui.SameLine();
+                ImGui.TextColored(new System.Numerics.Vector4(0.4f, 1.0f, 0.4f, 1.0f), "raised");
             }
 
             if (e.Tags != null && e.Tags.Count > 0)
@@ -384,11 +397,20 @@ namespace SpectreBodies
                 var entities = GameController.Entities;
                 _filteredEntities.Capacity = entities.Count;
 
+                _raisedMinions.Clear();
+
                 foreach (var entity in entities)
                 {
                     if (IsEntityValidForProcessing(entity))
                     {
                         _filteredEntities.Add(entity);
+                    }
+
+                    // Track the player's summoned minions (alive + non-hostile) so the
+                    // editor can mark wishlist spectres the player already has raised.
+                    if (entity.IsAlive && entity.Type == EntityType.Monster && !entity.IsHostile)
+                    {
+                        _raisedMinions.Add(entity.Metadata);
                     }
                 }
             }
@@ -604,6 +626,14 @@ namespace SpectreBodies
                 cache.Remove(cache.Keys.First());
             }
         }
+
+        private static System.Numerics.Vector4 TierColor(string tier) => tier switch
+        {
+            "S" => new System.Numerics.Vector4(1.0f, 0.84f, 0.0f, 1.0f),   // gold
+            "A" => new System.Numerics.Vector4(0.4f, 0.85f, 0.4f, 1.0f),   // green
+            "B" => new System.Numerics.Vector4(0.5f, 0.7f, 1.0f, 1.0f),    // blue
+            _   => new System.Numerics.Vector4(0.6f, 0.6f, 0.6f, 1.0f)     // grey (?/unknown)
+        };
 
         private static bool IsOnScreen(SDXVector2 screenPos) => screenPos != new SDXVector2();
 
