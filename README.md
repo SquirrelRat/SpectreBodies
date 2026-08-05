@@ -7,9 +7,12 @@ A Path of Exile plugin for managing and highlighting spectre corpses with custom
 ### Spectre Editor Interface
 <img width="819" height="544" alt="image" src="https://github.com/user-attachments/assets/65d4d3c4-7251-4671-aa76-1ce14877476d" />
 
-
 ### In-Game Corpse Highlighting
 <img width="309" height="157" alt="image" src="https://github.com/user-attachments/assets/11055ba9-5df6-4386-9761-fc461a299e3a" />
+
+### Spectre Library
+
+<img width="730" height="438" alt="image" src="https://github.com/user-attachments/assets/da119f0d-d893-4e34-a7c4-03ad31633f44" />
 
 ## Features
 
