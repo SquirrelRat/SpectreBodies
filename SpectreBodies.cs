@@ -127,7 +127,7 @@ namespace SpectreBodies
                     ImGui.PopItemWidth();
                     
                     ImGui.SameLine();
-                    ImGui.Text(_spectreDb.TryLookup(spectre, out var dbEntry) ? dbEntry.Name : spectre);
+                    ImGui.Text(Esc(_spectreDb.TryLookup(spectre, out var dbEntry) ? dbEntry.Name : spectre));
                     if (_raisedMinions.Contains(spectre))
                     {
                         ImGui.SameLine();
@@ -182,7 +182,7 @@ namespace SpectreBodies
 
                 foreach (var recentSpectre in recentCorpses)
                 {
-                    ImGui.Text(_spectreDb.TryLookup(recentSpectre, out var dbRecent) ? dbRecent.Name : recentSpectre);
+                    ImGui.Text(Esc(_spectreDb.TryLookup(recentSpectre, out var dbRecent) ? dbRecent.Name : recentSpectre));
                     if (_renderNameCache.TryGetValue(recentSpectre, out var renderName))
                     {
                         ImGui.SameLine();
@@ -290,11 +290,11 @@ namespace SpectreBodies
                     ? new System.Numerics.Vector4(1.0f, 0.55f, 0.15f, 1.0f)
                     : new System.Numerics.Vector4(0.35f, 0.65f, 1.0f, 1.0f);
 
-            ImGui.TextColored(nameColor, e.Name);
+            ImGui.TextColored(nameColor, Esc(e.Name));
             ImGui.SameLine();
-            ImGui.TextColored(TierColor(e.Tier), $"[{(string.IsNullOrEmpty(e.Tier) ? "?" : e.Tier)}]");
+            ImGui.TextColored(TierColor(e.Tier), Esc($"[{(string.IsNullOrEmpty(e.Tier) ? "?" : e.Tier)}]"));
             ImGui.SameLine();
-            ImGui.TextDisabled($"({e.Role}{(untested ? ", Untested" : "")})");
+            ImGui.TextDisabled(Esc($"({e.Role}{(untested ? ", Untested" : "")})"));
 
             ImGui.SameLine();
             if (wishlist.Contains(e.Metadata))
@@ -313,15 +313,27 @@ namespace SpectreBodies
             }
 
             if (e.Tags != null && e.Tags.Count > 0)
-                ImGui.TextDisabled("Tags: " + string.Join(", ", e.Tags));
+                ImGui.TextDisabled(Esc("Tags: " + string.Join(", ", e.Tags)));
 
             if (!string.IsNullOrEmpty(e.Acquisition))
                 ImGui.TextUnformatted($"Location: {e.Acquisition}");
 
             if (!string.IsNullOrEmpty(e.Note))
-                ImGui.TextWrapped(e.Note);
+                TextWrappedSafe(e.Note);
             if (!string.IsNullOrEmpty(e.AcquisitionNote))
-                ImGui.TextWrapped(e.AcquisitionNote);
+                TextWrappedSafe(e.AcquisitionNote);
+        }
+
+        // ImGui Text*() helpers treat their string as a printf format, so a stray '%'
+        // (e.g. "+20% action speed") gets parsed as a format specifier and prints garbage.
+        // Escape '%' for the format-based overloads, and use TextUnformatted for wrapped text.
+        private static string Esc(string s) => (s ?? "").Replace("%", "%%");
+
+        private static void TextWrappedSafe(string text)
+        {
+            ImGui.PushTextWrapPos(0.0f);
+            ImGui.TextUnformatted(text ?? "");
+            ImGui.PopTextWrapPos();
         }
 
         private void AddToWishlist(string metadata)
