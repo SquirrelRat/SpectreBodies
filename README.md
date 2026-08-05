@@ -27,8 +27,8 @@ A Path of Exile plugin for managing and highlighting spectre corpses with custom
 
 ### Performance Optimizations
 - Thread-Safe Operations - Concurrent-safe corpse collection and rendering
-- Smart Caching - LRU cache system with size limits to prevent memory issues
-- Frame-Based Updates - Optimized rendering with reduced per-frame overhead
+- Smart Caching - Size-capped cache with limits to prevent memory issues
+- Frame-Based Updates - Entity cache refreshed every 10 frames to reduce per-frame overhead
 - Efficient Filtering - Pre-filtered entity lists to minimize iteration costs
 
 ## Installation
@@ -44,9 +44,9 @@ A Path of Exile plugin for managing and highlighting spectre corpses with custom
 | Setting | Description | Default |
 |---------|-------------|----------|
 | Enable Plugin | Toggle the entire plugin on/off | Enabled |
-| Draw Distance | Maximum distance to detect corpses | 100 units |
+| Draw Distance | Maximum distance to detect corpses | 400 units |
 | Update Interval | Corpse scanning frequency in milliseconds | 250ms |
-| Max Recent Corpses | Limit for recently seen corpses list | 50 |
+| Max Recent Corpses | Limit for recently seen corpses list | 10 |
 
 ### Visual Settings
 | Setting | Description | Default |
@@ -54,16 +54,20 @@ A Path of Exile plugin for managing and highlighting spectre corpses with custom
 | Text Color | Default color for corpse labels | White |
 | Background Color | Background for text labels | Black |
 | Highlight Corpse | Toggle circle highlighting on/off | Enabled |
-| Highlight Color | Color for corpse circles | Red |
-| Highlight Radius | Size of highlight circles | 20 |
-| Text Offset | Vertical offset for text labels | 50 |
+| Highlight Color | Color for corpse circles | Yellow |
+| Highlight Radius | Size of highlight circles | 12 |
+| Highlight Segments | Number of segments for circle smoothness | 12 |
+| Highlight Z-Offset | Vertical offset for highlight circles | 0 |
+| Text Offset | Vertical offset for text labels | 20 |
 
 ### Display Options
 | Setting | Description | Default |
 |---------|-------------|----------|
-| Show All Corpses | Display all dead monsters vs. only spectres | Disabled |
+| Show All Nearby Corpse Metadata | Display all dead monsters (metadata) vs. only spectres | Disabled |
 | Use Render Names | Show in-game names instead of metadata | Enabled |
-| Spectre List | Comma-separated list of spectre metadata paths | Empty |
+| Spectre List | Comma-separated list of spectre metadata paths | Ships with 3 defaults (see below) |
+
+> **Default Spectre List:** `Metadata/Monsters/KaomWarrior/KaomWarrior7`, `Metadata/Monsters/WickerMan/WickerMan`, `Metadata/Monsters/Miner/MinerLantern`
 
 ## Usage
 
@@ -112,7 +116,7 @@ From Recent Corpses:
 - Added inline color pickers for each spectre
 - Major performance optimizations and thread safety
 - Fixed "Recently Seen Corpses" population issue
-- Improved memory management with LRU caching
+- Improved memory management with size-capped caching
 - Enhanced UI with better color integration
 
 ### v1.0.0

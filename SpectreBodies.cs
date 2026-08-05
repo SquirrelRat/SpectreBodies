@@ -25,30 +25,34 @@ namespace SpectreBodies
     {
         private const string MONSTER_METADATA_PATH = "/Monsters/";
         private const int MAX_CACHE_SIZE = 1000;
+        private const int FRAME_UPDATE_INTERVAL = 10;
         
-        // Thread-safe colelctions for corpse tracking
+        // Thread-safe collections for corpse tracking
         private readonly ConcurrentQueue<string> _recentCorpseQueue = new ConcurrentQueue<string>();
         private readonly HashSet<string> _recentCorpseSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly object _corpseSetLock = new object();
-        
-        // Caches with size limts to prevent memory leaks
+
+        // Caches with size limits to prevent memory leaks
         private readonly Dictionary<string, string> _displayNameCache = new Dictionary<string, string>();
         private readonly Dictionary<string, string> _renderNameCache = new Dictionary<string, string>();
         private readonly object _cacheLock = new object();
-        
-        // UI state varables
+
+        // UI state variables
         private string _newSpectreBuffer = "";
         private string _cachedSpectreListSource = "";
         private HashSet<string> _cachedValidSpectreBodies = new HashSet<string>();
         private bool _showSpectreEditor = false;
         private ExileCore.Shared.Coroutine _corpseScanningCoroutine;
-        
-        // Frame data cache for performace - important for FPS
+
+        // Frame data cache for performance - important for FPS.
+        // _filteredEntities is the shared cache (written under _frameCacheLock);
+        // _drawBuffer is render-thread-local, _scanBuffer is coroutine-local scratch.
         private SDXVector3 _cachedPlayerPos;
         private float _cachedDrawDistanceSqr;
-        private List<Entity> _cachedFilteredEntities = new List<Entity>();
-        private List<Entity> _drawEntities = new List<Entity>();
-        private int _lastFrameUpdate = -1;
+        private List<Entity> _filteredEntities = new List<Entity>();
+        private List<Entity> _drawBuffer = new List<Entity>();
+        private List<Entity> _scanBuffer = new List<Entity>();
+        private int _frameCounter;
         private readonly object _frameCacheLock = new object();
 
         public override bool Initialise()
@@ -66,10 +70,7 @@ namespace SpectreBodies
                 var titleColor = new System.Numerics.Vector4(1.0f, 0.84f, 0.0f, 1.0f);
                 ImGui.TextColored(titleColor, "Spectre Body List Editor");
 
-                var currentList = Settings.SpectreListSource
-                    .Split(new[] { ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
-                    .Select(s => s.Trim())
-                    .ToList();
+                var currentList = ParseSpectreList(Settings.SpectreListSource).ToList();
 
                 var listChanged = false;
 
@@ -132,27 +133,26 @@ namespace SpectreBodies
                 ImGui.TextColored(titleColor, "Recently Seen Corpses");
 
                 string spectreToAdd = null;
+
+                // Snapshot the recent-corpse queue under the lock, then render ImGui
+                // lock-free so the background coroutine isn't stalled by the UI loop.
+                List<string> recentCorpses;
                 lock (_corpseSetLock)
                 {
-                    var recentCorpses = new List<string>();
-                    var tempQueue = new Queue<string>(_recentCorpseQueue);
-                    while (tempQueue.Count > 0)
+                    recentCorpses = new List<string>(_recentCorpseQueue);
+                }
+                recentCorpses.Reverse();
+
+                foreach (var recentSpectre in recentCorpses)
+                {
+                    ImGui.Text(recentSpectre);
+                    if (_renderNameCache.TryGetValue(recentSpectre, out var renderName))
                     {
-                        recentCorpses.Add(tempQueue.Dequeue());
-                    }
-                    recentCorpses.Reverse();
-                    
-                    foreach (var recentSpectre in recentCorpses)
-                    {
-                        ImGui.Text(recentSpectre);
-                        if (_renderNameCache.TryGetValue(recentSpectre, out var renderName))
-                        {
-                            ImGui.SameLine();
-                            ImGui.TextColored(new System.Numerics.Vector4(0.0f, 1.0f, 0.0f, 1.0f), $" ({renderName})");
-                        }
                         ImGui.SameLine();
-                        if (ImGui.Button($"+##{recentSpectre}")) spectreToAdd = recentSpectre;
+                        ImGui.TextColored(new System.Numerics.Vector4(0.0f, 1.0f, 0.0f, 1.0f), $" ({renderName})");
                     }
+                    ImGui.SameLine();
+                    if (ImGui.Button($"+##{recentSpectre}")) spectreToAdd = recentSpectre;
                 }
 
                 if (spectreToAdd != null)
@@ -174,24 +174,40 @@ namespace SpectreBodies
         
         public override void OnUnload()
         {
-            // Clean up resources - important to prevent memory leaks
-            _corpseScanningCoroutine.Done(true);
-            _recentCorpseQueue.Clear();
-            _recentCorpseSet.Clear();
-            _displayNameCache.Clear();
+            // Stop the background coroutine first so it can't race the cleanup below.
+            _corpseScanningCoroutine?.Done(true);
+            _corpseScanningCoroutine = null;
+
+            lock (_corpseSetLock)
+            {
+                _recentCorpseQueue.Clear();
+                _recentCorpseSet.Clear();
+            }
+
+            lock (_cacheLock)
+            {
+                _displayNameCache.Clear();
+                _renderNameCache.Clear();
+            }
+
+            lock (_frameCacheLock)
+            {
+                _filteredEntities.Clear();
+            }
         }
 
         private IEnumerator CorpseScanning()
         {
-            // Main background loop - runs continuously to scan for corpses
+            // Background loop throttles corpse-tracking work off the render thread.
+            // The filtered entity cache itself is refreshed on the render thread
+            // (frame-throttled in Draw); here we only maintain the recent-corpse state.
             while (true)
             {
                 yield return new WaitTime(Settings.UpdateIntervalMs.Value);
-                
+
                 if (!GameController.InGame || GameController.Area.CurrentArea.IsTown)
                     continue;
 
-                UpdateFrameCache();
                 ProcessCorpseScanning();
             }
         }
@@ -204,23 +220,19 @@ namespace SpectreBodies
                 var drawDistance = Settings.DrawDistance.Value;
                 _cachedDrawDistanceSqr = drawDistance * drawDistance;
                 
-                _cachedFilteredEntities.Clear();
-                
-                // Pre-filter entites to reduce iteration count - important for FPS
+                _filteredEntities.Clear();
+
+                // Pre-filter entities to reduce iteration count - important for FPS
                 var entities = GameController.Entities;
-                _cachedFilteredEntities.Capacity = entities.Count;
-                
+                _filteredEntities.Capacity = entities.Count;
+
                 foreach (var entity in entities)
                 {
                     if (IsEntityValidForProcessing(entity))
                     {
-                        _cachedFilteredEntities.Add(entity);
+                        _filteredEntities.Add(entity);
                     }
                 }
-                
-                // Create snapshot for drawing - prevents enumeration errors
-                _drawEntities.Clear();
-                _drawEntities.AddRange(_cachedFilteredEntities);
             }
         }
         
@@ -236,17 +248,27 @@ namespace SpectreBodies
         
         private void ProcessCorpseScanning()
         {
-            foreach (var entity in _cachedFilteredEntities)
+            // Snapshot the shared filtered cache under the lock, then iterate the
+            // coroutine-local scratch buffer lock-free. This avoids an enumeration
+            // race with UpdateFrameCache, which mutates _filteredEntities on the
+            // render thread.
+            lock (_frameCacheLock)
+            {
+                _scanBuffer.Clear();
+                _scanBuffer.AddRange(_filteredEntities);
+            }
+
+            foreach (var entity in _scanBuffer)
             {
                 var metadata = entity.Metadata;
-                
+
                 lock (_corpseSetLock)
                 {
                     if (!_recentCorpseSet.Contains(metadata))
                     {
                         _recentCorpseQueue.Enqueue(metadata);
                         _recentCorpseSet.Add(metadata);
-                        
+
                         // Maintain queue size limit - important for memory management
                         while (_recentCorpseQueue.Count > Settings.MaxRecentCorpses.Value)
                         {
@@ -257,7 +279,7 @@ namespace SpectreBodies
                         }
                     }
                 }
-                
+
                 CacheRenderName(metadata, entity.RenderName);
             }
         }
@@ -271,12 +293,7 @@ namespace SpectreBodies
             {
                 if (!_renderNameCache.ContainsKey(metadata))
                 {
-                    // Simple LRU eviction - prevents memory leaks
-                    if (_renderNameCache.Count >= MAX_CACHE_SIZE)
-                    {
-                        var oldestKey = _renderNameCache.Keys.First();
-                        _renderNameCache.Remove(oldestKey);
-                    }
+                    EvictOldestCacheSlot(_renderNameCache);
                     _renderNameCache[metadata] = renderName;
                 }
             }
@@ -300,11 +317,8 @@ namespace SpectreBodies
             
             lock (_frameCacheLock)
             {
-                _cachedFilteredEntities.Clear();
-                _drawEntities.Clear();
+                _filteredEntities.Clear();
             }
-            
-            _lastFrameUpdate = -1;
         }
 
         public override void Render()
@@ -328,23 +342,28 @@ namespace SpectreBodies
         private void Draw()
         {
             UpdateSpectreCache();
-            
-            // Only update frame cache every 10 frames to reduce overhead - important for FPS
-            if (_lastFrameUpdate % 10 == 0)
+
+            // Frame-based update: refresh the filtered entity cache every N frames
+            // to reduce per-frame overhead (heavy entity iteration is throttled,
+            // not done every frame).
+            if (_frameCounter % FRAME_UPDATE_INTERVAL == 0)
             {
                 UpdateFrameCache();
             }
+            _frameCounter++;
 
             var camera = GameController.Game.IngameState.Camera;
 
-            // Create a local copy to avoid modification during enumeration - prevents crashes
-            List<Entity> entitiesToDraw;
+            // Copy the shared cache into the render-thread-local buffer under the
+            // lock, then enumerate lock-free. Reusing _drawBuffer avoids a
+            // per-frame allocation on the hot render path.
             lock (_frameCacheLock)
             {
-                entitiesToDraw = new List<Entity>(_drawEntities);
+                _drawBuffer.Clear();
+                _drawBuffer.AddRange(_filteredEntities);
             }
 
-            foreach (var entity in entitiesToDraw)
+            foreach (var entity in _drawBuffer)
             {
                 if (!entity.IsHostile || !entity.IsTargetable)
                     continue;
@@ -370,9 +389,8 @@ namespace SpectreBodies
             if (_cachedSpectreListSource != Settings.SpectreListSource)
             {
                 _cachedSpectreListSource = Settings.SpectreListSource;
-                var spectreListFromSettings = _cachedSpectreListSource
-                    .Split(new[] { ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
-                _cachedValidSpectreBodies = new HashSet<string>(spectreListFromSettings.Select(s => s.Trim()), StringComparer.OrdinalIgnoreCase);
+                _cachedValidSpectreBodies = new HashSet<string>(
+                    ParseSpectreList(_cachedSpectreListSource), StringComparer.OrdinalIgnoreCase);
             }
         }
         
@@ -381,7 +399,7 @@ namespace SpectreBodies
             var textWorldPos = entity.Pos.Translate(0, 0, Settings.TextOffset.Value);
             var textScreenPos = camera.WorldToScreen(textWorldPos);
             
-            if (textScreenPos == new SDXVector2())
+            if (!IsOnScreen(textScreenPos))
                 return;
                 
             var metadata = entity.Metadata;
@@ -397,7 +415,7 @@ namespace SpectreBodies
             var circleWorldPos = entity.Pos.Translate(0, 0, Settings.HighlightZOffset.Value);
             var circleScreenPos = camera.WorldToScreen(circleWorldPos);
             
-            if (circleScreenPos == new SDXVector2())
+            if (!IsOnScreen(circleScreenPos))
                 return;
                 
             var highlightColor = GetCustomColor(metadata, Settings.HighlightColor.Value);
@@ -415,14 +433,21 @@ namespace SpectreBodies
             return defaultColor;
         }
         
-        private Color GetSpectreColor(string spectre)
+        private static IEnumerable<string> ParseSpectreList(string source)
+            => source.Split(new[] { ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+                     .Select(s => s.Trim());
+
+        private void EvictOldestCacheSlot(Dictionary<string, string> cache)
         {
-            if (Settings.SpectreColors.TryGetValue(spectre, out var colorNode))
+            // Size-capped FIFO: drops the first-inserted entry when full.
+            // (Dictionary iteration follows insertion order, not recency.)
+            if (cache.Count >= MAX_CACHE_SIZE)
             {
-                return colorNode.Value;
+                cache.Remove(cache.Keys.First());
             }
-            return Settings.TextColor.Value;
         }
+
+        private static bool IsOnScreen(SDXVector2 screenPos) => screenPos != new SDXVector2();
 
         private string GetDisplayName(Entity entity, string metadata, bool useRenderNames, bool showAllMode)
         {
@@ -448,12 +473,7 @@ namespace SpectreBodies
             
             lock (_cacheLock)
             {
-                // LRU eviction if cache is full - prevents memory leaks
-                if (_displayNameCache.Count >= MAX_CACHE_SIZE)
-                {
-                    var oldestKey = _displayNameCache.Keys.First();
-                    _displayNameCache.Remove(oldestKey);
-                }
+                EvictOldestCacheSlot(_displayNameCache);
                 _displayNameCache[metadata] = finalName;
             }
 

@@ -32,14 +32,14 @@ namespace SpectreBodies
             TextColor = new ColorNode(new Color(255, 255, 255, 255));
             BackgroundColor = new ColorNode(new Color(0, 0, 0, 255));
             TextOffset = new RangeNode<int>(20, -360, 360);
-            DrawDistance = new RangeNode<int>(1050, 0, 2000);
+            DrawDistance = new RangeNode<int>(400, 0, 2000);
             UpdateIntervalMs = new RangeNode<int>(250, 100, 1000);
         }
         
         public ToggleNode Enable { get; set; }
         public HotkeyNode SpectreEditorHotKey { get; set; }
         
-        [Menu("Show All Nearby Corpses")]
+        [Menu("Show All Nearby Corpse Metadata")]
         public ToggleNode ShowAllCorpses { get; set; }
 
         [Menu("Use Render Names")]
