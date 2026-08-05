@@ -42,7 +42,6 @@ namespace SpectreBodies
 
         public IReadOnlyList<SpectreEntry> All { get; private set; } = Array.Empty<SpectreEntry>();
         public bool IsLoaded { get; private set; }
-        public int Count => _byMetadata.Count;
 
         public static SpectreDatabase Load()
         {
@@ -93,12 +92,5 @@ namespace SpectreBodies
 
         public bool TryLookup(string metadata, out SpectreEntry entry) =>
             _byMetadata.TryGetValue(metadata ?? "", out entry);
-
-        public string DisplayName(string metadata)
-        {
-            if (!string.IsNullOrEmpty(metadata) && _byMetadata.TryGetValue(metadata, out var entry))
-                return entry.Name;
-            return metadata ?? "";
-        }
     }
 }

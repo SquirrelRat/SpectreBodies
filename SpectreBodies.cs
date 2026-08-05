@@ -14,9 +14,6 @@ using ExileCore.Shared.Nodes;
 using ExileCore.Shared.Helpers;
 using ImGuiNET;
 using SharpDX;
-using SDXVector2 = SharpDX.Vector2;
-using SDXVector3 = SharpDX.Vector3;
-using SDXVector4 = SharpDX.Vector4;
 using SDXColor = SharpDX.Color;
 
 namespace SpectreBodies
@@ -51,7 +48,7 @@ namespace SpectreBodies
         // Frame data cache for performance - important for FPS.
         // _filteredEntities is the shared cache (written under _frameCacheLock);
         // _drawBuffer is render-thread-local, _scanBuffer is coroutine-local scratch.
-        private SDXVector3 _cachedPlayerPos;
+        private System.Numerics.Vector3 _cachedPlayerPos;
         private float _cachedDrawDistanceSqr;
         private List<Entity> _filteredEntities = new List<Entity>();
         private List<Entity> _drawBuffer = new List<Entity>();
@@ -133,10 +130,11 @@ namespace SpectreBodies
                         ImGui.SameLine();
                         ImGui.TextColored(new System.Numerics.Vector4(0.4f, 1.0f, 0.4f, 1.0f), " raised");
                     }
-                    if (_renderNameCache.TryGetValue(spectre, out var renderName))
+                    var renderName = GetRenderName(spectre);
+                    if (renderName != null)
                     {
                         ImGui.SameLine();
-                        ImGui.TextColored(new System.Numerics.Vector4(0.0f, 1.0f, 0.0f, 1.0f), $" ({renderName})");
+                        ImGui.TextColored(new System.Numerics.Vector4(0.0f, 1.0f, 0.0f, 1.0f), Esc($" ({renderName})"));
                     }
                     ImGui.SameLine();
                     if (ImGui.Button($"Delete##{spectre}")) spectreToDelete = spectre;
@@ -145,6 +143,7 @@ namespace SpectreBodies
                 if (spectreToDelete != null)
                 {
                     currentList.Remove(spectreToDelete);
+                    Settings.SpectreColors.Remove(spectreToDelete);
                     listChanged = true;
                 }
 
@@ -183,10 +182,11 @@ namespace SpectreBodies
                 foreach (var recentSpectre in recentCorpses)
                 {
                     ImGui.Text(Esc(_spectreDb.TryLookup(recentSpectre, out var dbRecent) ? dbRecent.Name : recentSpectre));
-                    if (_renderNameCache.TryGetValue(recentSpectre, out var renderName))
+                    var renderName = GetRenderName(recentSpectre);
+                    if (renderName != null)
                     {
                         ImGui.SameLine();
-                        ImGui.TextColored(new System.Numerics.Vector4(0.0f, 1.0f, 0.0f, 1.0f), $" ({renderName})");
+                        ImGui.TextColored(new System.Numerics.Vector4(0.0f, 1.0f, 0.0f, 1.0f), Esc($" ({renderName})"));
                     }
                     ImGui.SameLine();
                     if (ImGui.Button($"+##{recentSpectre}")) spectreToAdd = recentSpectre;
@@ -388,6 +388,11 @@ namespace SpectreBodies
             {
                 yield return new WaitTime(Settings.UpdateIntervalMs.Value);
 
+                // Respect the plugin's Enable toggle: the framework gates Render/Tick on
+                // it, but coroutines keep running on the ParallelRunner unless checked here.
+                if (!Settings.Enable.Value)
+                    continue;
+
                 if (!GameController.InGame || GameController.Area.CurrentArea.IsTown)
                     continue;
 
@@ -399,7 +404,14 @@ namespace SpectreBodies
         {
             lock (_frameCacheLock)
             {
-                _cachedPlayerPos = GameController.Player.Pos;
+                // Defensive: Player can be null transiently during area transitions
+                // even when InGame is true. Skip this refresh rather than throw; the
+                // next frame-based refresh retries shortly.
+                var player = GameController.Player;
+                if (player == null)
+                    return;
+
+                _cachedPlayerPos = player.PosNum;
                 var drawDistance = Settings.DrawDistance.Value;
                 _cachedDrawDistanceSqr = drawDistance * drawDistance;
                 
@@ -433,7 +445,7 @@ namespace SpectreBodies
             var metadata = entity.Metadata;
             return entity.IsDead && 
                    entity.Type == EntityType.Monster &&
-                   SDXVector3.DistanceSquared(entity.Pos, _cachedPlayerPos) <= _cachedDrawDistanceSqr &&
+                   System.Numerics.Vector3.DistanceSquared(entity.PosNum, _cachedPlayerPos) <= _cachedDrawDistanceSqr &&
                    !string.IsNullOrEmpty(metadata) &&
                    metadata.Contains(MONSTER_METADATA_PATH, StringComparison.OrdinalIgnoreCase);
         }
@@ -491,6 +503,19 @@ namespace SpectreBodies
             }
         }
 
+        // Locked read of the render-name cache. The cache is written by the background
+        // coroutine (CacheRenderName), so UI/rendering threads must read it under the
+        // same lock instead of touching the Dictionary directly.
+        private string GetRenderName(string metadata)
+        {
+            if (string.IsNullOrEmpty(metadata))
+                return null;
+
+            lock (_cacheLock)
+            {
+                return _renderNameCache.TryGetValue(metadata, out var renderName) ? renderName : null;
+            }
+        }
 
         public override void AreaChange(AreaInstance area)
         {
@@ -588,7 +613,7 @@ namespace SpectreBodies
         
         private void DrawCorpseLabel(Entity entity, Camera camera)
         {
-            var textWorldPos = entity.Pos.Translate(0, 0, Settings.TextOffset.Value);
+            var textWorldPos = MathHepler.Translate(entity.PosNum, 0, 0, Settings.TextOffset.Value);
             var textScreenPos = camera.WorldToScreen(textWorldPos);
             
             if (!IsOnScreen(textScreenPos))
@@ -597,14 +622,36 @@ namespace SpectreBodies
             var metadata = entity.Metadata;
             var displayName = GetDisplayName(entity, metadata, Settings.UseRenderNames.Value, Settings.ShowAllCorpses.Value);
             var textColor = GetCustomColor(metadata, Settings.TextColor.Value);
-            
-            Graphics.DrawTextWithBackground(displayName, new System.Numerics.Vector2(textScreenPos.X, textScreenPos.Y), 
-                textColor, null, FontAlign.Center, Settings.BackgroundColor.Value);
+
+            // Per the README, the in-game name is shown in green parentheses when it
+            // differs from the displayed name (e.g. metadata path vs. actual monster name).
+            var renderName = GetRenderName(metadata) ?? entity.RenderName;
+            var label = displayName;
+            string renderSuffix = null;
+            if (!string.IsNullOrEmpty(renderName) && !string.Equals(renderName, displayName, StringComparison.OrdinalIgnoreCase))
+            {
+                renderSuffix = $" ({renderName})";
+                label = displayName + renderSuffix;
+            }
+
+            var labelPos = new System.Numerics.Vector2(textScreenPos.X, textScreenPos.Y);
+            Graphics.DrawTextWithBackground(label, labelPos, textColor, null, FontAlign.Center, Settings.BackgroundColor.Value);
+
+            // Overlay the suffix in green at the exact position the combined label put it,
+            // so the rendered width and background stay aligned.
+            if (renderSuffix != null)
+            {
+                var fullSize = Graphics.MeasureText(label);
+                var baseSize = Graphics.MeasureText(displayName);
+                var leftX = textScreenPos.X - fullSize.X / 2.0f;
+                Graphics.DrawText(renderSuffix, new System.Numerics.Vector2(leftX + baseSize.X, textScreenPos.Y),
+                    new SDXColor(0, 255, 0, 255));
+            }
         }
         
         private void DrawCorpseHighlight(Entity entity, Camera camera, string metadata)
         {
-            var circleWorldPos = entity.Pos.Translate(0, 0, Settings.HighlightZOffset.Value);
+            var circleWorldPos = MathHepler.Translate(entity.PosNum, 0, 0, Settings.HighlightZOffset.Value);
             var circleScreenPos = camera.WorldToScreen(circleWorldPos);
             
             if (!IsOnScreen(circleScreenPos))
@@ -647,7 +694,7 @@ namespace SpectreBodies
             _   => new System.Numerics.Vector4(0.6f, 0.6f, 0.6f, 1.0f)     // grey (?/unknown)
         };
 
-        private static bool IsOnScreen(SDXVector2 screenPos) => screenPos != new SDXVector2();
+        private static bool IsOnScreen(System.Numerics.Vector2 screenPos) => screenPos != new System.Numerics.Vector2();
 
         private string GetDisplayName(Entity entity, string metadata, bool useRenderNames, bool showAllMode)
         {
@@ -668,7 +715,7 @@ namespace SpectreBodies
 
             var lastSlashIndex = metadata.LastIndexOf('/');
             var metadataName = lastSlashIndex >= 0 ? metadata.Substring(lastSlashIndex + 1) : metadata;
-            var renderName = entity.RenderName;
+            var renderName = GetRenderName(metadata) ?? entity.RenderName;
 
             var preferredName = useRenderNames ? renderName : metadataName;
             var fallbackName = useRenderNames ? metadataName : renderName;

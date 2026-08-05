@@ -19,11 +19,14 @@ A Path of Exile plugin for managing and highlighting spectre corpses with custom
 - Custom Color Coding - Assign unique colors to individual spectres for visual identification
 - Persistent Settings - All configurations and colors are saved between sessions
 - Spectre Database - A bundled, curated database of world-findable spectres (names, roles, abilities, and where to find them). Known spectres show a friendly name instead of their raw metadata path in the editor, recent-corpses list, and on the ground label.
+- Spectre Library Browser - A searchable, filterable browser tab over the database, with role and confirmation-status filters, color-coded tier badges, acquisition locations, and one-click add to your wishlist.
+- Raised Spectre Tracking - Wishlist spectres you currently have summoned are tagged "raised" in green in both the editor and the library.
 
 ### Visual Features
 - Inline Color Pickers - Click-to-edit color selection for each spectre
 - Corpse Highlighting - Customizable circles and text labels for corpses
-- Render Name Display - Shows both metadata and in-game names in green
+- Render Name Display - Shows in-game names in green parentheses alongside the label name whenever they differ (editor, recent list, and ground labels)
+- Tier Badges - Color-coded S/A/B tier badges in the library
 - Background Text - Improved readability with customizable background colors
 
 ### Performance Optimizations
@@ -45,7 +48,7 @@ A Path of Exile plugin for managing and highlighting spectre corpses with custom
 | Setting | Description | Default |
 |---------|-------------|----------|
 | Enable Plugin | Toggle the entire plugin on/off | Enabled |
-| Draw Distance | Maximum distance to detect corpses | 400 units |
+| Draw Distance | Maximum distance to detect corpses | 800 units |
 | Update Interval | Corpse scanning frequency in milliseconds | 250ms |
 | Max Recent Corpses | Limit for recently seen corpses list | 10 |
 
@@ -74,7 +77,7 @@ A Path of Exile plugin for managing and highlighting spectre corpses with custom
 
 The plugin ships a small, curated database of **world-findable** spectres (embedded as `Data/spectre-data.json`). When a corpse's metadata matches a database entry, its friendly name is shown instead of the raw metadata path — in the editor list, the recently-seen corpses panel, and on the ground label.
 
-Scope notes:
+Included & excluded:
 - **World-findable only.** Spectres that only come from itemized corpses (the Ritual / "King in the Mists" corpse *items*, e.g. the "Perfect *" family: Guardian Turtle, Forest Warrior, Spirit of Fortune, Hydra, etc.) are deliberately **excluded** — this plugin helps you find spectres as corpses in the world, and those can't be found that way.
 - Each entry carries: role (Damage/Utility), tags, tier, progression phase, acquisition zone/mechanic, and a short note.
 - **Confirmed** entries are established world spectres. **Untested** entries (new 3.29 `DeepwaterLeague` monsters) are flagged experimental — the league is new and the community hasn't evaluated them yet.
@@ -88,7 +91,7 @@ Examples of included spectres: Forged Frostbearer (Verisium Ore), Syndicate Oper
 The Spectre Editor can be opened in two ways:
 
 1. Hotkey Method (Recommended):
-   - Press the configured hotkey (default: F6)
+   - Press the configured hotkey (default: F3)
    - Hotkey can be customized in ExileAPI settings
 
 ### Managing Spectres
@@ -114,13 +117,24 @@ From Recent Corpses:
 3. Changes apply instantly to both text and highlights
 4. Colors are automatically saved
 
+#### Spectre Library
+
+The "Library" tab in the Spectre Editor browses the bundled database:
+
+1. **Search** by spectre name, tag, or metadata path
+2. **Filter** by role (All / Damage / Utility) and status (All / Confirmed / Untested)
+3. **Tier badges** show each spectre's S/A/B rating in gold/green/blue (grey for unknown)
+4. Click **+ Add** next to any entry to add it to your wishlist
+5. **Reset wishlist to all Confirmed spectres** replaces your current list in one click (asks for confirmation first)
+6. Entries you currently have raised are tagged **raised** in green
+
 ### In-Game Features
 
 #### Visual Indicators
 - Text Labels: Shows spectre names above corpses
 - Highlight Circles: Colored circles mark corpse locations
 - Custom Colors: Your chosen colors override defaults
-- Render Names: In-game names shown in green parentheses
+- Render Names: In-game names shown in green parentheses when they differ from the label name
 
 ## Changelog
 

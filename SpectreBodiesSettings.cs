@@ -12,7 +12,7 @@ namespace SpectreBodies
         public SpectreBodiesSettings()
         {
             Enable = new ToggleNode(true);
-            SpectreEditorHotKey = new HotkeyNode(Keys.F6);
+            SpectreEditorHotKey = new HotkeyNodeV2(Keys.F3);
             ShowAllCorpses = new ToggleNode(false);
             UseRenderNames = new ToggleNode(true);
             
@@ -32,12 +32,15 @@ namespace SpectreBodies
             TextColor = new ColorNode(new Color(255, 255, 255, 255));
             BackgroundColor = new ColorNode(new Color(0, 0, 0, 255));
             TextOffset = new RangeNode<int>(20, -360, 360);
-            DrawDistance = new RangeNode<int>(400, 0, 2000);
+            DrawDistance = new RangeNode<int>(800, 0, 2000);
             UpdateIntervalMs = new RangeNode<int>(250, 100, 1000);
         }
         
+        [Menu("Enable Plugin")]
         public ToggleNode Enable { get; set; }
-        public HotkeyNode SpectreEditorHotKey { get; set; }
+
+        [Menu("Spectre Editor Hotkey")]
+        public HotkeyNodeV2 SpectreEditorHotKey { get; set; }
         
         [Menu("Show All Nearby Corpse Metadata")]
         public ToggleNode ShowAllCorpses { get; set; }
@@ -45,6 +48,7 @@ namespace SpectreBodies
         [Menu("Use Render Names")]
         public ToggleNode UseRenderNames { get; set; }
 
+        [Menu("Spectre List", "Comma-separated list of spectre metadata paths.")]
         public string SpectreListSource { get; set; }
 
         [Menu("Recent List Size", "Number of corpses to remember in the 'Recently Seen' list.")]
@@ -71,7 +75,7 @@ namespace SpectreBodies
         [Menu("Background Color")] 
         public ColorNode BackgroundColor { get; set; }
 
-        [Menu("Text Z-Offset")] 
+        [Menu("Text Offset")]
         public RangeNode<int> TextOffset { get; set; }
 
         [Menu("Draw Distance")] 
