@@ -42,6 +42,10 @@ namespace SpectreBodies
         private string _cachedSpectreListSource = "";
         private HashSet<string> _cachedValidSpectreBodies = new HashSet<string>();
         private bool _showSpectreEditor = false;
+        private string _librarySearch = "";
+        private int _libRoleFilter;      // 0 = All, 1 = Damage, 2 = Utility
+        private int _libStatusFilter;    // 0 = All, 1 = Confirmed, 2 = Untested
+        private bool _resetConfirmArmed;
         private ExileCore.Shared.Coroutine _corpseScanningCoroutine;
 
         // Frame data cache for performance - important for FPS.
@@ -71,6 +75,26 @@ namespace SpectreBodies
         {
             if (ImGui.Begin("Spectre Editor", ref _showSpectreEditor, ImGuiWindowFlags.None))
             {
+                if (ImGui.BeginTabBar("##SpectreBodiesTabs"))
+                {
+                    if (ImGui.BeginTabItem("My Spectres"))
+                    {
+                        DrawMySpectresTab();
+                        ImGui.EndTabItem();
+                    }
+                    if (ImGui.BeginTabItem("Library"))
+                    {
+                        DrawLibraryTab();
+                        ImGui.EndTabItem();
+                    }
+                    ImGui.EndTabBar();
+                }
+            }
+            ImGui.End();
+        }
+
+        private void DrawMySpectresTab()
+        {
                 var titleColor = new System.Numerics.Vector4(1.0f, 0.84f, 0.0f, 1.0f);
                 ImGui.TextColored(titleColor, "Spectre Body List Editor");
 
@@ -172,10 +196,140 @@ namespace SpectreBodies
                 {
                     Settings.SpectreListSource = string.Join(",\n", currentList);
                 }
-            }
-            ImGui.End();
         }
         
+        private void DrawLibraryTab()
+        {
+            var titleColor = new System.Numerics.Vector4(1.0f, 0.84f, 0.0f, 1.0f);
+            ImGui.TextColored(titleColor, "Spectre Library");
+            ImGui.SameLine();
+            ImGui.TextDisabled($"({_spectreDb.All.Count} entries)");
+
+            if (!_spectreDb.IsLoaded)
+            {
+                ImGui.TextColored(new System.Numerics.Vector4(1.0f, 0.3f, 0.3f, 1.0f),
+                    "Database failed to load (spectre-data.json missing or invalid).");
+                return;
+            }
+
+            // Snapshot the current wishlist for membership checks this frame.
+            var wishlist = new HashSet<string>(
+                ParseSpectreList(Settings.SpectreListSource), StringComparer.OrdinalIgnoreCase);
+
+            ImGui.SetNextItemWidth(180);
+            ImGui.InputTextWithHint("##LibrarySearch", "Search name or tag...", ref _librarySearch, 128);
+
+            ImGui.TextUnformatted("Role:");
+            ImGui.SameLine();
+            ImGui.RadioButton("All##rf", ref _libRoleFilter, 0); ImGui.SameLine();
+            ImGui.RadioButton("Damage##rf", ref _libRoleFilter, 1); ImGui.SameLine();
+            ImGui.RadioButton("Utility##rf", ref _libRoleFilter, 2);
+
+            ImGui.TextUnformatted("Status:");
+            ImGui.SameLine();
+            ImGui.RadioButton("All##sf", ref _libStatusFilter, 0); ImGui.SameLine();
+            ImGui.RadioButton("Confirmed##sf", ref _libStatusFilter, 1); ImGui.SameLine();
+            ImGui.RadioButton("Untested##sf", ref _libStatusFilter, 2);
+
+            ImGui.Separator();
+
+            // Reset-to-library action with a two-stage confirm (a stray click can't wipe the list).
+            if (_resetConfirmArmed)
+            {
+                ImGui.TextColored(new System.Numerics.Vector4(1.0f, 0.6f, 0.2f, 1.0f),
+                    "Replace your current list with all Confirmed spectres?");
+                ImGui.SameLine();
+                if (ImGui.Button("Confirm##reset")) { ResetWishlistToLibrary(); _resetConfirmArmed = false; }
+                ImGui.SameLine();
+                if (ImGui.Button("Cancel##reset")) _resetConfirmArmed = false;
+            }
+            else
+            {
+                if (ImGui.Button("Reset wishlist to all Confirmed spectres"))
+                    _resetConfirmArmed = true;
+            }
+
+            ImGui.Separator();
+
+            string roleFilter = _libRoleFilter switch { 1 => "Damage", 2 => "Utility", _ => null };
+            string statusFilter = _libStatusFilter switch { 1 => "Confirmed", 2 => "Untested", _ => null };
+            var search = (_librarySearch ?? "").Trim();
+
+            foreach (var entry in _spectreDb.All)
+            {
+                if (roleFilter != null && !string.Equals(entry.Role, roleFilter, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (statusFilter != null && !string.Equals(entry.Status, statusFilter, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (search.Length > 0
+                    && entry.Name.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0
+                    && (entry.Tags == null || entry.Tags.All(t => t.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0))
+                    && entry.Metadata.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+
+                DrawLibraryEntry(entry, wishlist);
+                ImGui.Spacing();
+            }
+        }
+
+        private void DrawLibraryEntry(SpectreEntry e, HashSet<string> wishlist)
+        {
+            bool untested = string.Equals(e.Status, "Untested", StringComparison.OrdinalIgnoreCase);
+            var nameColor = untested
+                ? new System.Numerics.Vector4(0.6f, 0.6f, 0.6f, 1.0f)
+                : string.Equals(e.Role, "Damage", StringComparison.OrdinalIgnoreCase)
+                    ? new System.Numerics.Vector4(1.0f, 0.55f, 0.15f, 1.0f)
+                    : new System.Numerics.Vector4(0.35f, 0.65f, 1.0f, 1.0f);
+
+            ImGui.TextColored(nameColor, e.Name);
+            ImGui.SameLine();
+            ImGui.TextColored(new System.Numerics.Vector4(0.8f, 0.8f, 0.8f, 1.0f),
+                $"[{(string.IsNullOrEmpty(e.Tier) ? "?" : e.Tier)}]");
+            ImGui.SameLine();
+            ImGui.TextDisabled($"({e.Role}{(untested ? ", Untested" : "")})");
+
+            ImGui.SameLine();
+            if (wishlist.Contains(e.Metadata))
+            {
+                ImGui.TextColored(new System.Numerics.Vector4(0.4f, 1.0f, 0.4f, 1.0f), "Added");
+            }
+            else if (ImGui.Button($"+ Add##{e.Metadata}"))
+            {
+                AddToWishlist(e.Metadata);
+                wishlist.Add(e.Metadata);
+            }
+
+            if (e.Tags != null && e.Tags.Count > 0)
+                ImGui.TextDisabled("Tags: " + string.Join(", ", e.Tags));
+
+            if (!string.IsNullOrEmpty(e.Acquisition))
+                ImGui.TextUnformatted($"Location: {e.Acquisition}");
+
+            if (!string.IsNullOrEmpty(e.Note))
+                ImGui.TextWrapped(e.Note);
+            if (!string.IsNullOrEmpty(e.AcquisitionNote))
+                ImGui.TextWrapped(e.AcquisitionNote);
+        }
+
+        private void AddToWishlist(string metadata)
+        {
+            var list = ParseSpectreList(Settings.SpectreListSource).ToList();
+            if (!list.Contains(metadata, StringComparer.OrdinalIgnoreCase))
+            {
+                list.Add(metadata);
+                Settings.SpectreListSource = string.Join(",\n", list);
+            }
+        }
+
+        private void ResetWishlistToLibrary()
+        {
+            var confirmed = _spectreDb.All
+                .Where(e => string.Equals(e.Status, "Confirmed", StringComparison.OrdinalIgnoreCase))
+                .Select(e => e.Metadata)
+                .ToList();
+            Settings.SpectreListSource = string.Join(",\n", confirmed);
+        }
+
         public override void OnUnload()
         {
             // Stop the background coroutine first so it can't race the cleanup below.
