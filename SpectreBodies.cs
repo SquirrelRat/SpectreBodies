@@ -55,8 +55,12 @@ namespace SpectreBodies
         private int _frameCounter;
         private readonly object _frameCacheLock = new object();
 
+        // Bundled spectre info database (friendly names, roles, acquisition hints).
+        private SpectreDatabase _spectreDb = new SpectreDatabase();
+
         public override bool Initialise()
         {
+            _spectreDb = SpectreDatabase.Load();
             // Start background coroutine for corpse scanning - important for performance
             _corpseScanningCoroutine = new ExileCore.Shared.Coroutine(CorpseScanning(), this, "SpectreBodies");
             Core.ParallelRunner.Run(_corpseScanningCoroutine);
@@ -95,7 +99,7 @@ namespace SpectreBodies
                     ImGui.PopItemWidth();
                     
                     ImGui.SameLine();
-                    ImGui.Text(spectre);
+                    ImGui.Text(_spectreDb.TryLookup(spectre, out var dbEntry) ? dbEntry.Name : spectre);
                     if (_renderNameCache.TryGetValue(spectre, out var renderName))
                     {
                         ImGui.SameLine();
@@ -145,7 +149,7 @@ namespace SpectreBodies
 
                 foreach (var recentSpectre in recentCorpses)
                 {
-                    ImGui.Text(recentSpectre);
+                    ImGui.Text(_spectreDb.TryLookup(recentSpectre, out var dbRecent) ? dbRecent.Name : recentSpectre);
                     if (_renderNameCache.TryGetValue(recentSpectre, out var renderName))
                     {
                         ImGui.SameLine();
@@ -453,6 +457,10 @@ namespace SpectreBodies
         {
             if (showAllMode)
                 return metadata;
+
+            // Prefer the bundled database's friendly name when available.
+            if (_spectreDb.TryLookup(metadata, out var dbEntry) && !string.IsNullOrEmpty(dbEntry.Name))
+                return dbEntry.Name;
 
             lock (_cacheLock)
             {

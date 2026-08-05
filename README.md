@@ -18,6 +18,7 @@ A Path of Exile plugin for managing and highlighting spectre corpses with custom
 - Spectre Management - Add, remove, and organize your spectre list with ease
 - Custom Color Coding - Assign unique colors to individual spectres for visual identification
 - Persistent Settings - All configurations and colors are saved between sessions
+- Spectre Database - A bundled, curated database of world-findable spectres (names, roles, abilities, and where to find them). Known spectres show a friendly name instead of their raw metadata path in the editor, recent-corpses list, and on the ground label.
 
 ### Visual Features
 - Inline Color Pickers - Click-to-edit color selection for each spectre
@@ -68,6 +69,17 @@ A Path of Exile plugin for managing and highlighting spectre corpses with custom
 | Spectre List | Comma-separated list of spectre metadata paths | Ships with 3 defaults (see below) |
 
 > **Default Spectre List:** `Metadata/Monsters/KaomWarrior/KaomWarrior7`, `Metadata/Monsters/WickerMan/WickerMan`, `Metadata/Monsters/Miner/MinerLantern`
+
+## Bundled Spectre Database
+
+The plugin ships a small, curated database of **world-findable** spectres (embedded as `Data/spectre-data.json`). When a corpse's metadata matches a database entry, its friendly name is shown instead of the raw metadata path — in the editor list, the recently-seen corpses panel, and on the ground label.
+
+Scope notes:
+- **World-findable only.** Spectres that only come from itemized corpses (the Ritual / "King in the Mists" corpse *items*, e.g. the "Perfect *" family: Guardian Turtle, Forest Warrior, Spirit of Fortune, Hydra, etc.) are deliberately **excluded** — this plugin helps you find spectres as corpses in the world, and those can't be found that way.
+- Each entry carries: role (Damage/Utility), tags, tier, progression phase, acquisition zone/mechanic, and a short note.
+- **Confirmed** entries are established world spectres. **Untested** entries (new 3.29 `DeepwaterLeague` monsters) are flagged experimental — the league is new and the community hasn't evaluated them yet.
+
+Examples of included spectres: Forged Frostbearer (Verisium Ore), Syndicate Operative (Betrayal Research), Carnage/Host Chieftain (Act 2), Undying Evangelist (Act 3), Spectral Leader (T17 / action-speed aura), Wretched Defiler (T17), Primal Crushclaw (Harvest), and the new 3.29 ocean monsters as Untested.
 
 ## Usage
 
